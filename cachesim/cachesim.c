@@ -47,6 +47,7 @@ typedef enum {
 } replacement_policy_t;
 
 typedef struct {
+	int total_size;				// cache总大小
 	int block_size;				// cache块大小, 单位：字节
 	int block_num;				// cache块数量
 	int associativity;			// 相联度
@@ -78,10 +79,10 @@ uint32_t is_pow_2(uint32_t n) {
 }
 
 void display_usage(char *prog_name) {
-	fprintf(stderr, "用法: %s -s <cache块大小> -n <块数量> -a <相联度> -p <替换策略> -t <追踪文件名>\n", prog_name);
+	fprintf(stderr, "用法: %s -s <cache总大小> -b <块大小> -a <相联度> -p <替换策略> -t <追踪文件名>\n", prog_name);
     fprintf(stderr, "  参数说明:\n");
-    fprintf(stderr, "    -s <大小>: Cache块大小 (单位: 字节, 必须是2的幂).\n");
-    fprintf(stderr, "    -n <大小>: Cache块数量 (单位: 个, 必须是2的幂).\n");
+    fprintf(stderr, "    -s <大小>: Cache总大小 (单位: 字节, 必须是2的幂).\n");
+    fprintf(stderr, "    -b <大小>: Cache块大小 (单位: 字节, 必须是2的幂).\n");
     fprintf(stderr, "    -a <路数>: 相联度 (多少路组相联, 必须是2的幂).\n");
     fprintf(stderr, "               值为 1 表示直接映射 (Direct Mapped).\n");
     fprintf(stderr, "               若 块数量 == 相联度, 则为全相联 (Fully Associative).\n");
@@ -96,13 +97,13 @@ void display_usage(char *prog_name) {
 // 检查cache配置参数是否合适，不支持非2的次幂的参数配置
 // 如果cache的组数和相联度是2的次幂，说明cache的总块数一定是2的次幂
 void check_config(char *prog_name) {
-	if (config.associativity == 0 || config.block_num == 0 || config.block_size == 0) {
+	if (config.associativity == 0 || config.total_size == 0 || config.block_size == 0) {
 		display_usage(prog_name);
 		Assert(0, "Missing initialization parameter(s).");
 	}
 
-	if (!is_pow_2(config.block_num)) {
-		Assert(0, "Block number must be power of 2 and block number can not be zero.");
+	if (!is_pow_2(config.total_size)) {
+		Assert(0, "Cache szie must be power of 2 and cache size can not be zero.");
 	}
 
 	if (!is_pow_2(config.block_size)) {
@@ -125,13 +126,13 @@ void check_config(char *prog_name) {
 // 解析命令行的命令
 void parse_arguments(int argc, char **argv) {
 	int opt;
-	while ((opt = getopt(argc, argv, "s:n:a:p:t:h")) != -1) {
+	while ((opt = getopt(argc, argv, "s:b:a:p:t:h")) != -1) {
 		switch (opt) {
 			case 's':
-				config.block_size = atoi(optarg);
+				config.total_size = atoi(optarg);
 				break;
-			case 'n':
-				config.block_num = atoi(optarg);
+			case 'b':
+				config.block_size = atoi(optarg);
 				break;
 			case 'a':
 				config.associativity = atoi(optarg);
@@ -159,12 +160,11 @@ void parse_arguments(int argc, char **argv) {
 				break;
 		}
 	}
-
-	check_config(argv[0]);
 }
 
 
-void init_cache() {
+void init_cache(char *prog_name) {
+	config.block_num = config.total_size / config.block_size;
 	config.set_num = config.block_num / config.associativity;		// 组数量
 
 	config.bits_for_offset = LOG2(config.block_size);
@@ -201,10 +201,11 @@ void init_cache() {
 		srand(time(NULL));
 	}
 
+	check_config(prog_name);
 
 	// 打印配置信息
     printf("--- Cache 配置初始化完成 ---\n");
-    printf("总大小:         %d 字节\n", config.block_num * config.block_size);
+    printf("总大小:         %d 字节\n", config.total_size);
     printf("块大小:         %d 字节\n", config.block_size);
 	printf("总行数:         %d\n", config.block_num);
     printf("相联度:         %d 路\n", config.associativity);
@@ -393,7 +394,7 @@ void display_statistics() {
 int main(int argc, char **argv) {
 	parse_arguments(argc, argv);
 
-	init_cache();
+	init_cache(argv[0]);
 
 	sim_cache();
 
