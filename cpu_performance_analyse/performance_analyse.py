@@ -57,6 +57,7 @@ class PerformanceAnalyzer:
         type_data = self.data['type'][mode]
         ifu_data = self.data['ifu'][mode]
         lsu_data = self.data['lsu'][mode]
+        icache_data = self.data['icache'][mode]
         if not type_data:
             print(f"警告：模式 '{mode}' 的 'type' 数据为空。")
             return None
@@ -104,6 +105,11 @@ class PerformanceAnalyzer:
         ifu_fetch_cycles = ifu_data.get('fetch_cycles', 0)
         ifu_avg_fetch_cycles = ifu_fetch_cycles / ifu_fetch_quantity if ifu_fetch_quantity > 0 else 0
 
+        icache_hit_pct = icache_data.get('hit_times', 0) / ifu_fetch_quantity * 100 if ifu_fetch_quantity > 0 else 0
+        icache_hit_penalty = 2
+        icache_average_miss_penalty = icache_data.get('total_miss_penalty', 0) / icache_data.get('miss_times', 0)
+        icache_amat = (icache_hit_pct * icache_hit_penalty + (100 - icache_hit_penalty) * (icache_average_miss_penalty + icache_hit_penalty)) / 100
+
         lsu_load_quantity = lsu_data.get('load', {}).get('quantity', 0)
         lsu_load_cycles = lsu_data.get('load', {}).get('cycles', 0)
         lsu_avg_load_cycles = lsu_load_cycles / lsu_load_quantity if lsu_load_quantity > 0 else 0
@@ -122,6 +128,10 @@ class PerformanceAnalyzer:
             'cycle_distribution_pct': cycle_distribution_pct,    # % (周期)
             'cpi_per_type': cpi_per_type,                        # CPI
             'ifu_avg_fetch_cycles': ifu_avg_fetch_cycles,        # cycles/fetch
+            'icache_hit_pct': icache_hit_pct,                # Hit times
+            'icache_hit_penalty': icache_hit_penalty,
+            'icache_miss_penalty': icache_average_miss_penalty,
+            'icache_amat': icache_amat,
             'lsu_avg_load_cycles': lsu_avg_load_cycles,          # cycles/load (LSU specific)
             'lsu_avg_store_cycles': lsu_avg_store_cycles         # cycles/store (LSU specific)
         }
@@ -170,9 +180,18 @@ class PerformanceAnalyzer:
         print("\n4. IFU 平均取指周期:")
         print(f"  {analysis_data.get('ifu_avg_fetch_cycles', 0):.2f} cycles/fetch")
 
-        print("\n5. LSU 平均操作周期 (基于 LSU 统计):")
+        print("\n5. ICACHE:")
+        print(f"  命中率：{analysis_data.get('icache_hit_pct', 0):.2f} %")
+        print(f"  命中代价：{analysis_data.get('icache_hit_penalty', 0):.2f} cycles")
+        print(f"  缺失代价：{analysis_data.get('icache_miss_penalty', 0):.2f} cycles")
+        print(f"  AMAT：{analysis_data.get('icache_amat', 0):.2f} cycles")
+
+        print("\n6. LSU 平均操作周期 (基于 LSU 统计):")
         print(f"  - Load : {analysis_data.get('lsu_avg_load_cycles', 0):.2f} cycles/load")
         print(f"  - Store: {analysis_data.get('lsu_avg_store_cycles', 0):.2f} cycles/store")
+
+        print("\n7. 总 IPC:")
+        print(f"  - IPC : {analysis_data.get('total_instructions', 0) / analysis_data.get('total_cycles', 0):.6f} instructions/cycle")
         print("=" * (22 + len(mode_name) + 12))
 
     # --- _generate_plots, analyze_and_visualize, calculate_amdahl_speedup 保持不变 ---
@@ -504,26 +523,47 @@ class PerformanceAnalyzer:
 
 # --- 使用示例 (保持不变) ---
 data = {
-    'total' : { 'instruction_quantity' : 602668, 'cycle_quantity' : 10193257 },
-    'type' : {
-        'bootloader' : {
-            'calculate' : {'instructions' : 25419, 'cycles' : 206978}, 'load' : {'instructions' : 12666, 'cycles' : 3597904},
-            'store' : {'instructions' : 12718, 'cycles' : 115170}, 'jmp' : {'instructions' : 12723, 'cycles' : 102754},
-            'csr' : {'instructions' : 0, 'cycles' : 0},
+    'total': {
+        'instruction_quantity': 603423,  # Total dynamic_ints
+        'cycle_quantity': 36080992  # Total cycle times
+    },
+    'type': {
+        'bootloader': {
+            'calculate': {'instructions': 25419, 'cycles': 156014},
+            'load': {'instructions': 12666, 'cycles': 21654081},
+            'store': {'instructions': 12718, 'cycles': 461436},
+            'jmp': {'instructions': 12723, 'cycles': 76332},
+            'csr': {'instructions': 0, 'cycles': 0},
         },
-        'normal' : {
-            'calculate' : {'instructions' : 291169, 'cycles' : 3115072}, 'load' : {'instructions' : 72001, 'cycles' : 1150920},
-            'store' : {'instructions' : 46382, 'cycles' : 565058}, 'jmp' : {'instructions' : 129587, 'cycles' : 1339369},
-            'csr' : {'instructions' : 2, 'cycles' : 21},
+        'normal': {
+            'calculate': {'instructions': 291466, 'cycles': 6920003},
+            'load': {'instructions': 72175, 'cycles': 2957463},
+            'store': {'instructions': 46396, 'cycles': 1423676},
+            'jmp': {'instructions': 129858, 'cycles': 2431839},
+            'csr': {'instructions': 2, 'cycles': 83},
         }
     },
-    'ifu' : {
-        'bootloader' : {'fetch_quantity' : 63526, 'fetch_cycles' : 260175},
-        'normal' : {'fetch_quantity' : 539142, 'fetch_cycles' : 3576876},
+    'ifu': {
+        'bootloader': {'fetch_quantity': 63526, 'fetch_cycles': 151041},
+        'normal': {'fetch_quantity': 539898, 'fetch_cycles': 9084162},
     },
-    'lsu' : {
-        'bootloader' : {'load' : {'quantity' : 12666, 'cycles' : 3508482}, 'store' : {'quantity' : 12718, 'cycles' : 25436}},
-        'normal' : {'load' : {'quantity' : 72001, 'cycles' : 462623}, 'store' : {'quantity' : 46382, 'cycles' : 92764}}
+    'icache': {
+        'bootloader': {'hit_times': 63463, 'miss_times': 63, 'total_miss_penalty': 23989},
+        'normal': {'hit_times': 282356, 'miss_times': 257542, 'total_miss_penalty': 8004366},
+    },
+    'lsu': {
+        'bootloader': {
+            'load': {'quantity': 12666, 'cycles': 21570198},
+            'store': {'quantity': 12718, 'cycles': 397913}
+        },
+        'normal': {
+            'load': {'quantity': 72175, 'cycles': 2031944},
+            'store': {'quantity': 46396, 'cycles': 575997}
+        }
+    },
+    'exu': {
+        'bootloader': {'cal_executed': 63526},
+        'normal': {'cal_executed': 539897}
     }
 }
 
@@ -536,10 +576,10 @@ analyzer.analyze_and_visualize()
 # 执行 Amdahl 分析
 
 improvements = {
-    'calculate' : 5,
-    'load' : 20,
-    'store' : 10,
-    'jmp' : 5,
-    'csr' : 5
+    'calculate' : 6.8,
+    'jmp' : 6.8,
+    'load' : 2,
+    'store' : 2.45,
 }
-analyzer.calculate_amdahl_speedup(mode='bootloader', improvements=improvements)
+
+analyzer.calculate_amdahl_speedup(mode='normal', improvements=improvements)
